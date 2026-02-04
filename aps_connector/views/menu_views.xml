@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- APS Menu under Manufacturing > Configuration -->
+    <menuitem
+        id="menu_aps_root"
+        name="APS Integration"
+        parent="mrp.menu_mrp_configuration"
+        sequence="100"/>
+
+    <menuitem
+        id="menu_aps_config"
+        name="Settings"
+        parent="menu_aps_root"
+        action="action_aps_sync_config"
+        sequence="10"/>
+
+</odoo>

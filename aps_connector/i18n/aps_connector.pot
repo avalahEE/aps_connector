@@ -1,0 +1,103 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# * aps_connector
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-02-07 00:00+0000\n"
+"PO-Revision-Date: 2026-02-07 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: aps_connector
+#: model:ir.model,name:aps_connector.model_aps_sync_config
+msgid "APS Sync Configuration"
+msgstr ""
+
+#. module: aps_connector
+#: model_terms:ir.ui.view,arch_db:aps_connector.aps_sync_config_form_view
+msgid "APS Configuration"
+msgstr ""
+
+#. module: aps_connector
+#: model_terms:ir.ui.view,arch_db:aps_connector.aps_sync_config_form_view
+msgid "Connection"
+msgstr ""
+
+#. module: aps_connector
+#: model_terms:ir.ui.view,arch_db:aps_connector.aps_sync_config_form_view
+msgid "Organization"
+msgstr ""
+
+#. module: aps_connector
+#: model_terms:ir.ui.view,arch_db:aps_connector.aps_sync_config_list_view
+msgid "APS Configurations"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_aps_sync_config__name
+msgid "Name"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_aps_sync_config__company_id
+msgid "Company"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_aps_sync_config__api_key_hash
+msgid "API Key Hash"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,help:aps_connector.field_aps_sync_config__api_key_hash
+msgid "SHA-256 hash of the API key (internal)"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_aps_sync_config__api_key_display
+msgid "API Key"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,help:aps_connector.field_aps_sync_config__api_key_display
+msgid "API key for authenticating APS requests"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_aps_sync_config__odoo_version
+msgid "Odoo Version"
+msgstr ""
+
+#. module: aps_connector
+#: code:addons/aps_connector/models/aps_sync_config.py:0
+#, python-format
+msgid "API key cannot be empty"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_mrp_workorder__aps_scheduled
+msgid "Scheduled by APS"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,help:aps_connector.field_mrp_workorder__aps_scheduled
+msgid "Indicates this work order was scheduled by the APS system"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_mrp_workorder__aps_last_sync
+#: model:ir.model.fields,field_description:aps_connector.field_mrp_production__aps_last_sync
+msgid "Last APS Sync"
+msgstr ""
+
+#. module: aps_connector
+#: model:ir.model.fields,field_description:aps_connector.field_mrp_production__aps_synced
+msgid "Synced to APS"
+msgstr ""

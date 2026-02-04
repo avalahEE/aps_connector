@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- APS Manager Group -->
+    <record id="group_aps_manager" model="res.groups">
+        <field name="name">APS Manager</field>
+        <field name="category_id" ref="base.module_category_manufacturing"/>
+        <field name="comment">Can configure and manage APS integration settings.</field>
+    </record>
+
+    <!-- Add APS Manager to Manufacturing Manager -->
+    <record id="mrp.group_mrp_manager" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_aps_manager'))]"/>
+    </record>
+
+    <!-- Multi-company rule for APS Config -->
+    <record id="aps_sync_config_company_rule" model="ir.rule">
+        <field name="name">APS Config: multi-company</field>
+        <field name="model_id" ref="model_aps_sync_config"/>
+        <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>
