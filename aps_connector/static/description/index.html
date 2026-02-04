@@ -1,0 +1,92 @@
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12">
+            <h2 class="oe_slogan" style="color: #1a1a1a;">APS Connector</h2>
+            <h3 class="oe_slogan">Connect Odoo to APS 4 Odoo for Advanced Planning &amp; Scheduling</h3>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12">
+            <p class="oe_mt32" style="font-size: 16px; line-height: 1.6;">
+                This free connector module bridges your Odoo manufacturing data with
+                <a href="https://aps4odoo.com" target="_blank"><strong>APS 4 Odoo</strong></a>,
+                an external Advanced Planning &amp; Scheduling system built specifically for Odoo.
+                It provides secure, read-only API endpoints that export your manufacturing data
+                in the format APS needs, plus a write-back endpoint to push optimized schedules
+                back into Odoo work orders.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container oe_dark">
+    <div class="oe_row oe_spaced">
+        <h3 class="oe_slogan">Key Features</h3>
+        <div class="oe_span6">
+            <div class="oe_mt16">
+                <h4><span style="color: #1a1a1a;">&#9654;</span> Bulk Data Export</h4>
+                <p>High-performance SQL-based endpoints export manufacturing orders, work orders,
+                BOMs, resources, calendars, and materials in a single call.</p>
+            </div>
+            <div class="oe_mt16">
+                <h4><span style="color: #1a1a1a;">&#9654;</span> Schedule Write-Back</h4>
+                <p>Push optimized start/end dates from APS back to Odoo work orders.
+                Includes validation to prevent writing to completed or cancelled orders.</p>
+            </div>
+            <div class="oe_mt16">
+                <h4><span style="color: #1a1a1a;">&#9654;</span> Maintenance Integration</h4>
+                <p>Export blocking maintenance requests so APS can schedule around planned downtime.
+                Automatically detects if the maintenance module is installed.</p>
+            </div>
+        </div>
+        <div class="oe_span6">
+            <div class="oe_mt16">
+                <h4><span style="color: #1a1a1a;">&#9654;</span> Multi-Company Support</h4>
+                <p>All endpoints filter by the API key's company, ensuring complete data isolation
+                in multi-company Odoo environments.</p>
+            </div>
+            <div class="oe_mt16">
+                <h4><span style="color: #1a1a1a;">&#9654;</span> Secure API Key Authentication</h4>
+                <p>API keys are stored as SHA-256 hashes. Rate limiting protects against brute force.
+                All access is logged for audit purposes.</p>
+            </div>
+            <div class="oe_mt16">
+                <h4><span style="color: #1a1a1a;">&#9654;</span> Incremental Sync</h4>
+                <p>Supports both full and incremental sync modes. Only changed records are
+                transferred, keeping sync fast even with large datasets.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container oe_dark">
+    <div class="oe_row oe_spaced">
+        <h3 class="oe_slogan">Configuration</h3>
+        <div class="oe_span12">
+            <ol style="font-size: 15px; line-height: 2;">
+                <li>Install this module from the Odoo Apps menu</li>
+                <li>Go to <strong>Manufacturing &gt; Configuration &gt; APS Settings</strong></li>
+                <li>Enter your APS server URL and generate an API key</li>
+                <li>The APS system will use this key to securely read your manufacturing data</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container">
+    <div class="oe_row oe_spaced">
+        <div class="oe_span12 text-center">
+            <h3 class="oe_slogan">About</h3>
+            <p style="font-size: 15px;">
+                Built by <a href="https://avalah.com" target="_blank"><strong>Avalah</strong></a> &mdash; Odoo Gold Partner.
+            </p>
+            <p style="font-size: 14px; color: #888;">
+                This connector module is free. APS 4 Odoo scheduling service requires a separate subscription.
+                Visit <a href="https://aps4odoo.com" target="_blank">aps4odoo.com</a> for more information.
+            </p>
+        </div>
+    </div>
+</section>
