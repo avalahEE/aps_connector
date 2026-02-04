@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Default APS Configuration -->
+    <record id="default_aps_config" model="aps.sync.config">
+        <field name="name">Default</field>
+    </record>
+</odoo>

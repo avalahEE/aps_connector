@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_aps_sync_config_manager,aps.sync.config manager,model_aps_sync_config,group_aps_manager,1,1,1,1
+access_aps_sync_config_user,aps.sync.config user,model_aps_sync_config,mrp.group_mrp_user,1,0,0,0
