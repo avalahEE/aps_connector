@@ -3,9 +3,9 @@
     'name': 'APS Connector',
     'version': '17.0.1.7.0',
     'category': 'Manufacturing',
-    'summary': 'Connect Odoo to APS 4 Odoo for Advanced Planning & Scheduling',
+    'summary': 'Finite capacity scheduling for Odoo manufacturing — connect to APS 4 Manufacturing',
     'author': 'Avalah',
-    'website': 'https://aps4odoo.com',
+    'website': 'https://aps4mfg.com',
     'license': 'LGPL-3',
     'depends': [
         'base',

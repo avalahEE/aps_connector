@@ -1,10 +1,10 @@
 # APS Connector for Odoo
 
-Odoo module that provides a JSON-RPC API for bi-directional integration with [APS 4 Odoo](https://avalah.com) (Advanced Planning and Scheduling).
+Odoo module that provides a JSON-RPC API for bi-directional integration with [APS 4 Manufacturing](https://aps4mfg.com) (Advanced Planning and Scheduling).
 
 ## What it does
 
-The APS Connector exposes Odoo manufacturing data to APS 4 Odoo for scheduling, and writes optimized schedules back to Odoo.
+The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for scheduling, and writes optimized schedules back to Odoo.
 
 **Read from Odoo:**
 - Manufacturing Orders (with Sale Order linkage, components, parent/child MO hierarchy)
