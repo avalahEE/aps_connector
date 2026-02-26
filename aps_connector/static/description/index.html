@@ -19,13 +19,13 @@
     <div class="oe_row oe_spaced">
         <div class="oe_span12">
             <p class="oe_mt32" style="font-size: 16px; line-height: 1.6;">
-                Odoo schedules manufacturing orders without checking if a work center is already booked.
-                It doesn't follow subassembly dependencies across MOs. And it picks alternative work centers
-                by earliest start, not earliest finish.
+                Odoo plans manufacturing orders by earliest start but stops there.
+                It doesn't follow subassembly dependencies across MOs.
+                And it picks alternative work centers by earliest start, not earliest finish.
             </p>
             <p style="font-size: 16px; line-height: 1.6;">
                 <a href="https://aps4mfg.com" target="_blank"><strong>APS 4 Manufacturing</strong></a>
-                fixes all three. This free connector module syncs your manufacturing data to APS,
+                solves all three. This free connector module syncs your manufacturing data to APS,
                 which schedules against real work center capacity, shift calendars, and cross-MO dependencies &mdash;
                 then writes optimized dates back to Odoo automatically.
             </p>
