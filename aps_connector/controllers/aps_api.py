@@ -38,6 +38,10 @@ _failed_attempts_by_key = {}  # api_key_prefix -> (count, first_attempt_time)
 RATE_LIMIT_WINDOW = 60  # seconds
 MAX_FAILED_ATTEMPTS = 10
 
+# Expanding a template BOM across its variants is bounded — configurable
+# products can have thousands and APS only needs the ones that get produced
+MAX_BOM_VARIANTS = 20
+
 # Set to True only if running behind a trusted reverse proxy (nginx, load balancer)
 # When False, X-Forwarded-For header is ignored to prevent spoofing
 TRUST_X_FORWARDED_FOR = False
@@ -694,9 +698,26 @@ class ApsApiController(http.Controller):
             operations = []
 
             for bom in boms:
-                # Get parent product
-                parent_product = bom.product_id or bom.product_tmpl_id.product_variant_id
-                if parent_product:
+                # A BOM set on the template applies to every variant, and its
+                # lines/operations can be restricted to particular attribute
+                # values. Exporting the template's first variant with all lines
+                # gave one variant another variant's components and left the
+                # rest with no BOM at all.
+                if bom.product_id:
+                    variants = bom.product_id
+                    suffix_ids = False
+                else:
+                    variants = bom.product_tmpl_id.product_variant_ids.filtered('active')
+                    suffix_ids = len(variants) > 1
+                    if len(variants) > MAX_BOM_VARIANTS:
+                        variants = bom.product_tmpl_id.product_variant_id
+                        suffix_ids = False
+                        _logger.warning(
+                            'BOM %s has more than %s variants, exporting only %s',
+                            bom.id, MAX_BOM_VARIANTS, variants.display_name,
+                        )
+
+                for parent_product in variants:
                     products[parent_product.id] = {
                         'externalId': str(parent_product.id),
                         'code': parent_product.default_code or f'PROD-{parent_product.id}',
@@ -708,6 +729,8 @@ class ApsApiController(http.Controller):
 
                     # BOM Lines (components)
                     for line in bom.bom_line_ids:
+                        if line._skip_bom_line(parent_product):
+                            continue
                         component = line.product_id
                         products[component.id] = {
                             'externalId': str(component.id),
@@ -719,17 +742,20 @@ class ApsApiController(http.Controller):
                         }
 
                         bom_lines.append({
-                            'externalId': str(line.id),
+                            'externalId': '%s-%s' % (line.id, parent_product.id) if suffix_ids else str(line.id),
                             'parentProductExternalId': str(parent_product.id),
                             'componentProductExternalId': str(component.id),
                             'quantity': float(line.product_qty),
                             'sequence': line.sequence,
+                            'unitOfMeasure': line.product_uom_id.name if line.product_uom_id else 'EA',
                         })
 
                     # Routing Operations
                     for op in bom.operation_ids:
+                        if op._skip_operation_line(parent_product):
+                            continue
                         operations.append({
-                            'externalId': str(op.id),
+                            'externalId': '%s-%s' % (op.id, parent_product.id) if suffix_ids else str(op.id),
                             'productExternalId': str(parent_product.id),
                             'resourceExternalId': str(op.workcenter_id.id),
                             'operationNumber': op.sequence,
@@ -837,10 +863,17 @@ class ApsApiController(http.Controller):
 
             mo_ids = [r['id'] for r in mo_rows]
 
-            # Q2: Components (stock moves) for this page of MOs
-            cr.execute("""
+            # Q2: Components (stock moves) for this page of MOs.
+            # stock_move.quantity only exists from Odoo 17 onwards under that
+            # name, so check before selecting it — this module ships for 17/18/19.
+            cr.execute("""SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'stock_move' AND column_name = 'quantity'""")
+            reserved_col = 'sm.quantity' if cr.fetchone() else '0.0'
+            cr.execute(f"""
                 SELECT sm.id, sm.raw_material_production_id AS mo_id,
-                       sm.product_id, sm.product_uom_qty,
+                       sm.product_id, sm.product_uom_qty, sm.state,
+                       sm.operation_id, sm.workorder_id,
+                       {reserved_col} AS reserved_qty,
                        pp.default_code AS product_code,
                        COALESCE(pt.name->>'en_US', (SELECT value FROM jsonb_each_text(pt.name) LIMIT 1), '') AS product_name,
                        pt.type AS product_type, pp.active AS product_active,
@@ -989,6 +1022,12 @@ class ApsApiController(http.Controller):
                         'productExternalId': str(c_prod_id),
                         'quantity': float(c['product_uom_qty']),
                         'unitOfMeasure': c['product_uom'] or 'EA',
+                        # Which routing step actually consumes this — without it
+                        # every requirement lands on the MO's first operation
+                        'workOrderExternalId': str(c['workorder_id']) if c['workorder_id'] else None,
+                        'operationExternalId': str(c['operation_id']) if c['operation_id'] else None,
+                        'quantityReserved': float(c['reserved_qty'] or 0),
+                        'isReserved': c['state'] == 'assigned',
                     })
 
                 records.append({
@@ -1079,10 +1118,11 @@ class ApsApiController(http.Controller):
             # Q1: WOs with sequence from routing operation
             cr.execute(f"""
                 SELECT wo.id, wo.production_id, wo.workcenter_id, wo.operation_id,
-                       wo.name, wo.duration_expected, wo.qty_produced,
+                       wo.name, wo.duration_expected, wo.duration, wo.qty_produced,
                        wo.state, wo.write_date, wo.date_start, wo.date_finished,
                        COALESCE(mro.sequence, 10) AS op_sequence,
-                       mp.qty_producing AS mo_qty_producing
+                       mp.qty_producing AS mo_qty_producing,
+                       mp.product_qty AS mo_product_qty
                 FROM mrp_workorder wo
                 JOIN mrp_production mp ON mp.id = wo.production_id
                 LEFT JOIN mrp_routing_workcenter mro ON mro.id = wo.operation_id
@@ -1179,6 +1219,19 @@ class ApsApiController(http.Controller):
                     # Use sequence-based deps
                     blocked_by = [str(bid) for bid in seq_deps.get(wo_id, [])]
 
+                expected = float(wo['duration_expected'] or 0)
+                real = float(wo['duration'] or 0)
+                # Two independent signals of how much is left: time already
+                # logged, and quantity already produced. Trust whichever says
+                # there is less work to do — over-planning an operation that is
+                # nearly finished is what pushes the rest of the order out.
+                # The MO's ordered quantity, not what is being produced in the
+                # current run — qty_producing is a slice, not the total
+                total_qty = float(wo['mo_product_qty'] or 0)
+                done_qty = float(wo['qty_produced'] or 0)
+                remaining = expected - real
+                if total_qty > 0 and done_qty > 0:
+                    remaining = min(remaining, expected * max(total_qty - done_qty, 0) / total_qty)
                 records.append({
                     'externalId': str(wo_id),
                     'orderExternalId': str(mo_id),
@@ -1189,11 +1242,16 @@ class ApsApiController(http.Controller):
                     'operationStart': wo['date_start'].isoformat() + 'Z' if wo['date_start'] else None,
                     'operationEnd': wo['date_finished'].isoformat() + 'Z' if wo['date_finished'] else None,
                     'setupTime': 0,
-                    'processTime': round(float(wo['duration_expected'] or 0), 2),
+                    # Work already logged is done — planning the full expected
+                    # duration again pushes the finish out for work that is
+                    # nearly complete. Never zero, or the WO drops off the plan.
+                    'processTime': round(max(remaining, 1.0) if wo['state'] == 'progress' else expected, 2),
+                    'expectedDuration': round(expected, 2),
+                    'actualDuration': round(real, 2),
                     'quantity': float(wo['mo_qty_producing'] or 0),
                     'quantityCompleted': float(wo['qty_produced'] or 0),
                     'status': map_wo_state_to_aps(wo['state']),
-                    'locked': wo['state'] in ('progress', 'done'),
+                    'locked': wo['state'] == 'done',
                     'writeDate': wo['write_date'].isoformat() + 'Z' if wo['write_date'] else None,
                     'blockedByExternalIds': blocked_by,
                 })
@@ -1231,7 +1289,13 @@ class ApsApiController(http.Controller):
             env = request.env(user=SUPERUSER_ID)
             Quant = env['stock.quant']
 
-            domain = [('quantity', '>', 0), ('company_id', '=', company_id)]
+            # Only real stock counts as supply — scrap, production and customer
+            # locations were being reported as available material
+            domain = [
+                ('quantity', '>', 0),
+                ('company_id', '=', company_id),
+                ('location_id.usage', 'in', ('internal', 'transit')),
+            ]
             if product_external_ids:
                 domain.append(('product_id', 'in', [int(pid) for pid in product_external_ids]))
             if location_external_ids:
@@ -1260,8 +1324,12 @@ class ApsApiController(http.Controller):
                     'supplyType': 'INVENTORY',
                     'quantity': float(quant.quantity),
                     'quantityReserved': float(quant.reserved_quantity),
-                    'quantityAvailable': float(quant.quantity - quant.reserved_quantity),
-                    'availableDate': datetime.utcnow().isoformat() + 'Z',  # Inventory is available now
+                    # Reservations can exceed what is physically there after an
+                    # adjustment; a negative supply row is not a supply
+                    'quantityAvailable': max(0.0, float(quant.quantity - quant.reserved_quantity)),
+                    # On hand means on hand. Sending "now" moved existing stock's
+                    # availability forward on every sync.
+                    'availableDate': '1970-01-01T00:00:00Z',
                     'locationExternalId': str(quant.location_id.id),
                     'locationName': quant.location_id.complete_name,
                 })
@@ -1325,6 +1393,11 @@ class ApsApiController(http.Controller):
                     'isActive': product.active,
                 }
 
+                # A line without a planned date used to be sent as null, which
+                # APS read as 1970 — i.e. "already here"
+                planned = (line.date_planned or line.order_id.date_planned
+                           or line.order_id.date_approve or line.order_id.date_order)
+
                 qty_pending = float(line.product_qty) - float(line.qty_received)
                 records.append({
                     'externalId': str(line.id),
@@ -1333,7 +1406,8 @@ class ApsApiController(http.Controller):
                     'quantity': float(line.product_qty),
                     'quantityReserved': float(line.qty_received),  # Already received
                     'quantityAvailable': qty_pending,
-                    'availableDate': line.date_planned.isoformat() + 'Z' if line.date_planned else None,
+                    'availableDate': planned.isoformat() + 'Z' if planned else None,
+                    'availableDateKnown': bool(planned),
                     'referenceNumber': line.order_id.name,
                     'supplierExternalId': str(line.order_id.partner_id.id),
                     'supplierName': line.order_id.partner_id.name,
