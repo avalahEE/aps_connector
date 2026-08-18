@@ -1832,11 +1832,16 @@ class ApsApiController(http.Controller):
                         if not group_ext_ids:
                             continue
                         try:
-                            group_mo_ids = [int(eid) for eid in group_ext_ids]
-                            mo_batch = Production.browse(group_mo_ids).exists()
-                            mo_batch.action_assign()
-                            summary['reReserved'] += len(mo_batch)
-                            for mo in mo_batch:
+                            # One at a time, in the order APS sent them. Assigning a
+                            # whole group at once lets Odoo hand the scarce lot out in
+                            # its own id order, so within a priority group the earlier
+                            # due date could lose the stock to a later one.
+                            for eid in group_ext_ids:
+                                mo = mo_by_id.get(eid)
+                                if not mo:
+                                    continue
+                                mo.action_assign()
+                                summary['reReserved'] += 1
                                 res_state_after = mo.reservation_state if hasattr(mo, 'reservation_state') else 'unknown'
                                 reservation_status.append({
                                     'orderExternalId': str(mo.id),
