@@ -125,16 +125,8 @@ class MrpProduction(models.Model):
         date_start = min(wo.date_start for wo in workorders)
         date_finished = max(wo.date_finished for wo in workorders)
 
-        # date_deadline is the customer's promise, not ours. Writing the MO's
-        # dates makes Odoo recompute it from the finished move, so publishing a
-        # plan quietly moved 216 of 268 deadlines onto whatever APS scheduled —
-        # after which every order looked on time and the (priority, deadline)
-        # ordering that decides who gets scarce stock drifted with each publish.
-        deadline_before = self.date_deadline
         self.with_context(force_date=True).write({
             'date_start': date_start,
             'date_finished': date_finished,
         })
-        if self.date_deadline != deadline_before:
-            self.with_context(force_date=True).write({'date_deadline': deadline_before})
         return True
