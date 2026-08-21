@@ -59,7 +59,7 @@ The page never prints the granular version, but the Odoo.sh deploy link does:
 ```
 for v in 19.0 18.0 17.0; do
   s=$(curl -s "https://apps.odoo.com/apps/modules/$v/aps_connector" | grep -o "odoo-sh/aps_connector/[0-9.]*" | head -1 | sed 's|.*/||')
-  g=$(git show origin/$v:aps_connector/__manifest__.py | grep -m1 "'version'" | sed 's/[^0-9.]//g')
+  g=$(git show "origin/${v}:aps_connector/__manifest__.py" | grep -m1 "'version'" | sed 's/[^0-9.]//g')   # braces matter in zsh
   echo "$v store=$s git=$g"
 done
 ```
