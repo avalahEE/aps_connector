@@ -41,6 +41,19 @@ class ApsSyncConfig(models.Model):
         store=False,
     )
 
+    connector_version = fields.Char(
+        string='Connector version',
+        compute='_compute_connector_version',
+        store=False,
+        help='Version of this module as installed, so support can see what you are running',
+    )
+
+    @api.depends_context('uid')
+    def _compute_connector_version(self):
+        module = self.env['ir.module.module'].sudo().search([('name', '=', 'aps_connector')], limit=1)
+        for record in self:
+            record.connector_version = module.latest_version or ''
+
     @api.depends_context('uid')
     def _compute_odoo_version(self):
         """Detect Odoo version"""
