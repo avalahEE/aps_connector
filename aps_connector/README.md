@@ -21,12 +21,15 @@ The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for sch
 - Scheduled start/finish dates on work orders
 - Conflict detection using `write_date` to prevent overwriting concurrent changes
 - Material re-reservation for rescheduled work orders
+- Unplanning work orders APS deliberately left out, when the planner asks for it on publish
+  (an operation arrives with no dates and the whole MO is unplanned, Odoo's own way; orders
+  that have started or finished are left alone)
 
 ## Installation
 
 1. Clone the appropriate branch into your Odoo addons directory:
    ```bash
-   git clone -b 19.0 git@github.com:avalahEE/aps_connector.git
+   git clone -b 18.0 git@github.com:avalahEE/aps_connector.git
    ```
 2. Restart Odoo and update the apps list
 3. Install the **APS Connector** module
@@ -35,6 +38,8 @@ The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for sch
 
 1. Go to **Manufacturing > Configuration > APS Settings**
 2. Set the API key (stored as SHA-256 hash)
+
+The same page shows the installed connector version, which is what support will ask for.
 
 ## Technical Details
 
@@ -47,7 +52,7 @@ The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for sch
 
 ## Dependencies
 
-`base`, `mrp`, `stock`, `purchase`, `resource`
+`base`, `mrp`, `sale_mrp`, `stock`, `purchase`, `resource`
 
 ## License
 
