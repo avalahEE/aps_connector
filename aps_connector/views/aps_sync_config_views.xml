@@ -16,6 +16,7 @@
                         <group string="Connection">
                             <field name="api_key_display" password="True"/>
                             <field name="odoo_version" readonly="1"/>
+                            <field name="connector_version" readonly="1"/>
                         </group>
                         <group string="Organization">
                             <field name="company_id" groups="base.group_multi_company"/>
