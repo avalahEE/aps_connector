@@ -1540,6 +1540,17 @@ class ApsApiController(http.Controller):
 
                 operations_to_update.append((op_data, workorder))
 
+            # An operation with no dates means the plan deliberately left its order out.
+            # Odoo only unplans whole MOs, so those go first - doing it later would wipe
+            # dates written in the same batch.
+            if not dry_run:
+                to_unplan = Production.browse()
+                for op_data, workorder in operations_to_update:
+                    if not op_data.get('operationStart') and workorder.production_id:
+                        to_unplan |= workorder.production_id
+                if to_unplan:
+                    results['unplanned'] = to_unplan.clear_aps_dates()
+
             # Second pass: update non-conflicting operations
             for op_data, workorder in operations_to_update:
                 try:
@@ -1563,6 +1574,9 @@ class ApsApiController(http.Controller):
                             end_str = end_str.split('.')[0]
                         end_dt = fields.Datetime.from_string(end_str)
                     workcenter_id = int(resource_external_id) if resource_external_id else None
+
+                    if not start_dt or not end_dt:
+                        continue
 
                     if not dry_run:
                         workorder.write_aps_schedule(start_dt, end_dt, workcenter_id)
