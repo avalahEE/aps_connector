@@ -16,6 +16,11 @@ three are pushed and the version is stated in three places that must agree.
    updated in the same commit as the manifest. If it disagrees, it lies to the customer.
 3. Nothing else. The store page itself shows only the series (`v 19.0`).
 
+Two more things are per-branch and easy to miss when porting a patch: the `git clone -b`
+line in `README.md` must name that branch, and anything in the README describing behaviour
+has to be true for that release too.
+
+
 ## Steps
 
 Work on 19.0 first, then port. Never edit the three branches in parallel - the ports are a
