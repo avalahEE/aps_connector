@@ -72,6 +72,12 @@ done
 Only say "take the latest" once these match. Until then the customer would pull the older
 mirror and the version they end up with is not the one that carries the fix.
 
+The mirror can also be stuck on Odoo's side - in August 2026 they confirmed a fault in the
+store's code import, with all three repos registered, Active and scanning cleanly. Registration
+is therefore not proof the store is current; only the version comparison above is. When the
+store lags, hand the customer the repository directly (`git clone -b <their series>`), which is
+what the README on each branch already tells them to do.
+
 ## What to tell a customer
 
 Their own instance is the authority. `Manufacturing -> Configuration -> APS Connector` shows
