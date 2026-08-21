@@ -106,6 +106,23 @@ class MrpProduction(models.Model):
             'aps_last_sync': fields.Datetime.now(),
         })
 
+    def clear_aps_dates(self):
+        """Unplan an MO the plan deliberately left out.
+
+        Odoo refuses to clear a single work order's dates - unplanning goes through the
+        MO, which drops the dates and the calendar leaves together. Orders that have
+        already started or finished keep theirs.
+        """
+        cleared = 0
+        for mo in self:
+            if mo.state in ('done', 'cancel'):
+                continue
+            if any(wo.state in ('progress', 'done') for wo in mo.workorder_ids):
+                continue
+            mo.button_unplan()
+            cleared += 1
+        return cleared
+
     def update_dates_from_workorders(self):
         """
         Update MO date_start and date_finished based on work order dates.
