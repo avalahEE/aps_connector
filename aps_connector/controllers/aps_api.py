@@ -1117,12 +1117,20 @@ class ApsApiController(http.Controller):
             cr.execute(f"SELECT count(*) FROM mrp_workorder wo JOIN mrp_production mp ON mp.id = wo.production_id WHERE {where_sql}", params)
             total = cr.fetchone()[0]
 
+            # A work order added straight onto the MO has no routing step to take its
+            # number from. Odoo 18 and 19 keep a sequence on the work order itself; 17
+            # does not, so there it goes last instead. Falling back to 10 put packing
+            # ahead of cutting on every MO with a hand-added step.
+            cr.execute("""SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'mrp_workorder' AND column_name = 'sequence'""")
+            seq_expr = 'COALESCE(mro.sequence, wo.sequence, 10)' if cr.fetchone() else 'COALESCE(mro.sequence, 9999)'
+
             # Q1: WOs with sequence from routing operation
             cr.execute(f"""
                 SELECT wo.id, wo.production_id, wo.workcenter_id, wo.operation_id,
                        wo.name, wo.duration_expected, wo.duration, wo.qty_produced,
                        wo.state, wo.write_date, wo.date_start, wo.date_finished,
-                       COALESCE(mro.sequence, 10) AS op_sequence,
+                       {seq_expr} AS op_sequence,
                        mp.qty_producing AS mo_qty_producing,
                        mp.product_qty AS mo_product_qty
                 FROM mrp_workorder wo
