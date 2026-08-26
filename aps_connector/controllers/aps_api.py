@@ -1117,13 +1117,16 @@ class ApsApiController(http.Controller):
             cr.execute(f"SELECT count(*) FROM mrp_workorder wo JOIN mrp_production mp ON mp.id = wo.production_id WHERE {where_sql}", params)
             total = cr.fetchone()[0]
 
-            # A work order added straight onto the MO has no routing step to take its
-            # number from. Odoo 18 and 19 keep a sequence on the work order itself; 17
-            # does not, so there it goes last instead. Falling back to 10 put packing
-            # ahead of cutting on every MO with a hand-added step.
+            # Order the steps the way Odoo itself does, by the work order's own sequence:
+            # it counts every step, including ones added straight onto the MO with no
+            # routing behind them. The routing sequence skips exactly those, and taking
+            # the routing number first mixed two scales in one MO — a hand-added step
+            # numbered 4 landed ahead of a routed step numbered 100. Odoo 17 has no
+            # sequence on the work order, so there an unrouted step goes last.
             cr.execute("""SELECT 1 FROM information_schema.columns
                            WHERE table_name = 'mrp_workorder' AND column_name = 'sequence'""")
-            seq_expr = 'COALESCE(mro.sequence, wo.sequence, 10)' if cr.fetchone() else 'COALESCE(mro.sequence, 9999)'
+            seq_expr = ('COALESCE(wo.sequence, mro.sequence, 9999)' if cr.fetchone()
+                        else 'COALESCE(mro.sequence, 9999)')
 
             # Q1: WOs with sequence from routing operation
             cr.execute(f"""
