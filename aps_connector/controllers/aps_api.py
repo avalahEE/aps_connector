@@ -409,8 +409,15 @@ class ApsApiController(http.Controller):
                 return {'success': True, 'total': 0, 'records': [], 'warning': 'mrp_maintenance module not installed'}
 
             cr = request.env.cr
-            cr.execute("""
-                SELECT mr.id, mr.name, mr.schedule_date, mr.schedule_end,
+            # Only Odoo 19 carries schedule_end; 17 and 18 give the length as duration in
+            # hours. Selecting a column that is not there failed the whole endpoint, so on
+            # those releases maintenance never blocked a work centre at all.
+            cr.execute("""SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'maintenance_request' AND column_name = 'schedule_end'""")
+            end_expr = ('mr.schedule_end' if cr.fetchone()
+                        else "mr.schedule_date + (COALESCE(mr.duration, 0) * interval '1 hour')")
+            cr.execute(f"""
+                SELECT mr.id, mr.name, mr.schedule_date, {end_expr} AS schedule_end,
                        mr.workcenter_id, mr.block_workcenter
                 FROM maintenance_request mr
                 WHERE mr.block_workcenter = TRUE
@@ -1404,10 +1411,16 @@ class ApsApiController(http.Controller):
                     'isActive': product.active,
                 }
 
-                # A line without a planned date used to be sent as null, which
-                # APS read as 1970 — i.e. "already here"
-                planned = (line.date_planned or line.order_id.date_planned
-                           or line.order_id.date_approve or line.order_id.date_order)
+                # The date Odoo itself answers "when is this component available" with is
+                # the receipt's scheduled date, not the line's expected arrival — the two
+                # differ by a day on a customer's order and made our plan a day optimistic.
+                # The line date remains the fallback for a line with no receipt yet.
+                incoming = line.move_ids.filtered(
+                    lambda m: m.state not in ('done', 'cancel') and m.date
+                ) if 'move_ids' in line._fields else line.browse()
+                planned = (min(incoming.mapped('date')) if incoming else None) or (
+                    line.date_planned or line.order_id.date_planned
+                    or line.order_id.date_approve or line.order_id.date_order)
 
                 qty_pending = float(line.product_qty) - float(line.qty_received)
                 records.append({
