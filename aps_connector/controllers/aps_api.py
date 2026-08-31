@@ -314,7 +314,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Health check failed')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # CALENDAR EXCEPTIONS (Leaves)
@@ -381,7 +381,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching calendar exceptions')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # MAINTENANCE REQUESTS (blocking work center time)
@@ -451,7 +451,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching maintenance requests')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # CALENDARS
@@ -541,7 +541,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching calendars')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # RESOURCES (Work Centers)
@@ -610,7 +610,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching resources')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # PRODUCTS
@@ -658,7 +658,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching products')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # BOMs (Bill of Materials) with Lines and Operations
@@ -775,7 +775,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching BOMs')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # MANUFACTURING ORDERS
@@ -1066,7 +1066,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching orders')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # WORK ORDERS (Order Operations)
@@ -1284,7 +1284,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching operations')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # INVENTORY (Material Supply - Stock)
@@ -1361,7 +1361,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching inventory')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # PURCHASE ORDERS (Material Supply - PO)
@@ -1446,7 +1446,7 @@ class ApsApiController(http.Controller):
             }
         except Exception as e:
             _logger.exception('Error fetching purchase orders')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # SCHEDULE WRITE-BACK (APS → Odoo)
@@ -1635,7 +1635,7 @@ class ApsApiController(http.Controller):
 
         except Exception as e:
             _logger.exception('Error writing back schedule')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # SCHEDULE VALIDATION
@@ -1705,7 +1705,7 @@ class ApsApiController(http.Controller):
 
         except Exception as e:
             _logger.exception('Error validating schedule')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
     # =========================================================================
     # MATERIAL RE-RESERVATION - Unreserve and re-reserve for new schedule
@@ -1952,5 +1952,5 @@ class ApsApiController(http.Controller):
 
         except Exception as e:
             _logger.exception('Error re-reserving materials')
-            return {'error': 'Internal error'}
+            return {'error': 'Internal error', 'errorType': type(e).__name__, 'errorDetail': str(e)[:200]}
 
