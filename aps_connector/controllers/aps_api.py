@@ -408,14 +408,21 @@ class ApsApiController(http.Controller):
                 return {'success': True, 'total': 0, 'records': [], 'warning': 'mrp_maintenance module not installed'}
 
             cr = request.env.cr
-            cr.execute("""
-                SELECT mr.id, mr.name, mr.scheduled_date, mr.schedule_end,
+            # Only Odoo 19 carries schedule_end; 17 and 18 give the length as duration in
+            # hours, and the field is schedule_date. Selecting columns that are not there
+            # failed the whole endpoint, so maintenance never blocked a work centre here.
+            cr.execute("""SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'maintenance_request' AND column_name = 'schedule_end'""")
+            end_expr = ('mr.schedule_end' if cr.fetchone()
+                        else "mr.schedule_date + (COALESCE(mr.duration, 0) * interval '1 hour')")
+            cr.execute(f"""
+                SELECT mr.id, mr.name, mr.schedule_date, {end_expr} AS schedule_end,
                        mr.workcenter_id, mr.block_workcenter
                 FROM maintenance_request mr
                 WHERE mr.block_workcenter = TRUE
                   AND mr.workcenter_id IS NOT NULL
                   AND mr.stage_id IN (SELECT id FROM maintenance_stage WHERE done IS NOT TRUE)
-                  AND mr.scheduled_date IS NOT NULL
+                  AND mr.schedule_date IS NOT NULL
                   AND mr.company_id = %s
                 ORDER BY mr.id
             """, (company_id,))
@@ -424,7 +431,7 @@ class ApsApiController(http.Controller):
 
             records = []
             for r in rows:
-                start_date = r['scheduled_date']
+                start_date = r['schedule_date']
                 end_date = r['schedule_end']
                 if not start_date or not end_date:
                     continue
@@ -1405,10 +1412,16 @@ class ApsApiController(http.Controller):
                     'isActive': product.active,
                 }
 
-                # A line without a planned date used to be sent as null, which
-                # APS read as 1970 — i.e. "already here"
-                planned = (line.date_planned or line.order_id.date_planned
-                           or line.order_id.date_approve or line.order_id.date_order)
+                # The date Odoo itself answers "when is this component available" with is
+                # the receipt's scheduled date, not the line's expected arrival — the two
+                # differ by a day on a customer's order and made our plan a day optimistic.
+                # The line date remains the fallback for a line with no receipt yet.
+                incoming = line.move_ids.filtered(
+                    lambda m: m.state not in ('done', 'cancel') and m.date
+                ) if 'move_ids' in line._fields else line.browse()
+                planned = (min(incoming.mapped('date')) if incoming else None) or (
+                    line.date_planned or line.order_id.date_planned
+                    or line.order_id.date_approve or line.order_id.date_order)
 
                 qty_pending = float(line.product_qty) - float(line.qty_received)
                 records.append({
