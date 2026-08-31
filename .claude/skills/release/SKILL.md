@@ -56,6 +56,42 @@ print(m.installed_version, m.latest_version)   # disk, database - Odoo's labels 
 `installed_version` is the version **on disk** (label: "Latest Version"), `latest_version` is
 the one **in the database** (label: "Installed Version"). Odoo's own source says so.
 
+## Every release runs against every version, on real data
+
+The module ships for three Odoo releases and their data models differ. A column that
+exists in 19 and not in 18 does not fail loudly: the endpoint returns `Internal error`,
+the sync logs a warning and carries on, and the feature is simply missing for a year.
+Two of these shipped at once - `maintenance_request.scheduled_date` (the field is
+`schedule_date`) and `schedule_end` (19 only) - so maintenance never blocked a work centre
+on 17 or 18 at all.
+
+Never reason about a field from one version's database. Check the column in each version
+before writing SQL:
+
+```
+docker exec odoo18-db-1 psql -U odoo -d aps18 -t -A -c \
+  "select column_name from information_schema.columns where table_name='mrp_workorder'"
+```
+
+and guard what differs at runtime, the way `stock_move.quantity` and
+`mrp_workorder.sequence` already are:
+
+```python
+cr.execute("SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (t, c))
+expr = 'the.column' if cr.fetchone() else 'a fallback'
+```
+
+Then prove it. `endpoint-check.py` beside this file calls every read endpoint and fails on
+the first one that errors:
+
+```
+python3 .claude/skills/release/endpoint-check.py http://127.0.0.1:8080 <api-key>
+```
+
+Run it against 19, 18 and 17 - and against a customer database when you have one restored.
+A release is not finished until all of them report zero broken endpoints. It catches what
+unit tests cannot, because the fault is in the shape of somebody else's database.
+
 ## What the Apps Store is serving
 
 The store syncs from the registered git repo on its own schedule, so it lags a push by hours.
