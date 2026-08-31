@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'APS Connector',
-    'version': '19.0.1.22.0',
+    'version': '19.0.1.23.0',
     'category': 'Manufacturing',
     'summary': 'Finite capacity scheduling for Odoo manufacturing — connect to APS 4 Manufacturing',
     'author': 'Avalah',
