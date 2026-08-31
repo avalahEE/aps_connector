@@ -1406,10 +1406,16 @@ class ApsApiController(http.Controller):
                     'isActive': product.active,
                 }
 
-                # A line without a planned date used to be sent as null, which
-                # APS read as 1970 — i.e. "already here"
-                planned = (line.date_planned or line.order_id.date_planned
-                           or line.order_id.date_approve or line.order_id.date_order)
+                # The date Odoo itself answers "when is this component available" with is
+                # the receipt's scheduled date, not the line's expected arrival — the two
+                # differ by a day on a customer's order and made our plan a day optimistic.
+                # The line date remains the fallback for a line with no receipt yet.
+                incoming = line.move_ids.filtered(
+                    lambda m: m.state not in ('done', 'cancel') and m.date
+                ) if 'move_ids' in line._fields else line.browse()
+                planned = (min(incoming.mapped('date')) if incoming else None) or (
+                    line.date_planned or line.order_id.date_planned
+                    or line.order_id.date_approve or line.order_id.date_order)
 
                 qty_pending = float(line.product_qty) - float(line.qty_received)
                 records.append({
