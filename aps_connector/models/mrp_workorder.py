@@ -52,8 +52,10 @@ class MrpWorkorder(models.Model):
         if workcenter_id:
             vals['workcenter_id'] = workcenter_id
 
-        # Write to work order
-        result = self.write(vals)
+        # Odoo replaces a written date_finished with its own start-plus-expected-duration
+        # inside the work centre calendar unless told not to; the end APS planned, breaks
+        # and all, was coming back as Odoo's own arithmetic on 17, 18 and 19 alike.
+        result = self.with_context(bypass_duration_calculation=True).write(vals)
 
         # Also update the leave directly to ensure dates are preserved
         if self.leave_id:
