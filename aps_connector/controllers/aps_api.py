@@ -24,6 +24,8 @@ from datetime import datetime, timedelta
 from odoo import http, fields, SUPERUSER_ID
 from odoo.http import request, Response
 
+from ..models.sale_order import sale_orders_by_mo
+
 _logger = logging.getLogger(__name__)
 
 API_VERSION = '3'  # Bumped for security improvements
@@ -888,97 +890,9 @@ class ApsApiController(http.Controller):
             for c in comp_rows:
                 comps_by_mo.setdefault(c['mo_id'], []).append(c)
 
-            # Q3: SO lookup — three standard Odoo paths
-            so_by_mo = {}  # mo_id -> (so_name, customer_name)
-            cr.execute("""
-                WITH RECURSIVE
-                -- Path A: created_production_id → PG → sale_id (base)
-                -- Path B: move_dest_ids → PG → sale_id (Odoo MO smart button)
-                -- Then recurse down to children via stock_move chain
-                mo_so AS (
-                    -- A: stock_move.created_production_id → move's PG → sale_id
-                    SELECT mp.id, so.name AS sale_order_name, rp.name AS customer_name
-                    FROM mrp_production mp
-                    JOIN stock_move sm ON sm.created_production_id = mp.id
-                    JOIN procurement_group pg ON pg.id = sm.group_id
-                        AND pg.sale_id IS NOT NULL
-                    JOIN sale_order so ON so.id = pg.sale_id
-                    LEFT JOIN res_partner rp ON rp.id = so.partner_id
-                    WHERE mp.id = ANY(%(ids)s)
-
-                    UNION
-
-                    -- B: MO → siblings in PG → finished move → move_dest → PG → sale_id
-                    SELECT mp.id, so.name, rp.name
-                    FROM mrp_production mp
-                    JOIN mrp_production sibling
-                        ON sibling.procurement_group_id = mp.procurement_group_id
-                    JOIN stock_move sm ON sm.production_id = sibling.id
-                    JOIN stock_move_move_rel rel ON rel.move_orig_id = sm.id
-                    JOIN stock_move dest ON dest.id = rel.move_dest_id
-                    JOIN procurement_group pg ON pg.id = dest.group_id
-                        AND pg.sale_id IS NOT NULL
-                    JOIN sale_order so ON so.id = pg.sale_id
-                    LEFT JOIN res_partner rp ON rp.id = so.partner_id
-                    WHERE mp.id = ANY(%(ids)s)
-
-                    UNION ALL
-
-                    -- Recurse: children via stock_move chain
-                    SELECT child.id, parent_so.sale_order_name, parent_so.customer_name
-                    FROM mo_so parent_so
-                    JOIN stock_move sm ON sm.raw_material_production_id = parent_so.id
-                        AND sm.created_production_id IS NOT NULL
-                        AND sm.state != 'cancel'
-                    JOIN mrp_production child ON child.id = sm.created_production_id
-                    WHERE child.id = ANY(%(ids)s)
-                ),
-                -- Path C: origin chain fallback for MOs not found above
-                origin_chain AS (
-                    SELECT mp.id AS original_id, mp.id AS current_id, mp.origin
-                    FROM mrp_production mp
-                    WHERE mp.id = ANY(%(ids)s)
-                      AND mp.id NOT IN (SELECT id FROM mo_so)
-                      AND mp.origin IS NOT NULL AND mp.origin != ''
-
-                    UNION ALL
-
-                    SELECT oc.original_id, parent.id, parent.origin
-                    FROM origin_chain oc
-                    JOIN mrp_production parent ON parent.name = oc.origin
-                    WHERE oc.origin LIKE 'WH/MO/%%'
-                ),
-                origin_so AS (
-                    SELECT DISTINCT ON (oc.original_id)
-                        oc.original_id AS id,
-                        COALESCE(so_pg.name, so_origin.name) AS sale_order_name,
-                        COALESCE(rp_pg.name, rp_origin.name) AS customer_name
-                    FROM origin_chain oc
-                    JOIN mrp_production ancestor ON ancestor.id = oc.current_id
-                    -- Try move_dest_ids path on ancestor
-                    LEFT JOIN mrp_production anc_sibling
-                        ON anc_sibling.procurement_group_id = ancestor.procurement_group_id
-                    LEFT JOIN stock_move anc_sm ON anc_sm.production_id = anc_sibling.id
-                    LEFT JOIN stock_move_move_rel anc_rel ON anc_rel.move_orig_id = anc_sm.id
-                    LEFT JOIN stock_move anc_dest ON anc_dest.id = anc_rel.move_dest_id
-                    LEFT JOIN procurement_group pg ON pg.id = anc_dest.group_id
-                        AND pg.sale_id IS NOT NULL
-                    LEFT JOIN sale_order so_pg ON so_pg.id = pg.sale_id
-                    LEFT JOIN res_partner rp_pg ON rp_pg.id = so_pg.partner_id
-                    -- Try origin = SO name (exact or prefix before '/')
-                    LEFT JOIN sale_order so_origin
-                        ON so_origin.name = ancestor.origin
-                        OR so_origin.name = split_part(ancestor.origin, '/', 1)
-                    LEFT JOIN res_partner rp_origin ON rp_origin.id = so_origin.partner_id
-                    WHERE so_pg.id IS NOT NULL OR so_origin.id IS NOT NULL
-                    ORDER BY oc.original_id
-                )
-                SELECT id, sale_order_name, customer_name FROM mo_so
-                UNION
-                SELECT id, sale_order_name, customer_name FROM origin_so
-            """, {'ids': mo_ids})
-            for row in cr.dictfetchall():
-                so_by_mo[row['id']] = (row['sale_order_name'], row['customer_name'])
+            so_by_mo = {
+                mo_id: (so['name'], so['customer']) for mo_id, so in sale_orders_by_mo(cr, mo_ids).items()
+            }
 
             # Build response
             products = {}
@@ -1446,7 +1360,11 @@ class ApsApiController(http.Controller):
     # SCHEDULE WRITE-BACK (APS → Odoo)
     # =========================================================================
 
-    @http.route('/aps/api/v1/schedule/write_back', type='json', auth='none', methods=['POST'], csrf=False)
+    # Odoo 19 serves auth='none' routes on a read-only cursor and only switches to a
+    # read/write one when the ReadOnlySqlTransaction error reaches it. This endpoint
+    # catches per-work-order errors itself, so the switch never happened and every
+    # work order came back as "Failed to update work order". Harmless here, kept the same.
+    @http.route('/aps/api/v1/schedule/write_back', type='json', auth='none', methods=['POST'], csrf=False, readonly=False)
     def write_back_schedule(self, **kwargs):
         """
         Write scheduled dates back to work orders.
@@ -1464,7 +1382,12 @@ class ApsApiController(http.Controller):
                 }
             ],
             "dryRun": false,
-            "conflictStrategy": "SKIP_CONFLICTS"  // ABORT, SKIP_CONFLICTS, FORCE_OVERWRITE
+            "conflictStrategy": "SKIP_CONFLICTS",  // ABORT, SKIP_CONFLICTS, FORCE_OVERWRITE
+            "salesOrderNote": {                     // optional - what to tell the sale order
+                "mode": "NONE",                     // NONE, MENTION, ACTIVITY (when later than promised)
+                "unit": "DAY",                      // DAY or WEEK - a move inside the unit is silent
+                "timezone": "Europe/Tallinn"        // the plant's clock for day and week boundaries
+            }
         }
         """
         try:
@@ -1625,6 +1548,13 @@ class ApsApiController(http.Controller):
                     except Exception as e:
                         _logger.warning('Failed to update MO %s dates: %s', mo.name, str(e))
 
+                # Tell the sale order when its manufacturing is now planned to complete
+                try:
+                    results['salesOrdersNoted'] = env['sale.order'].aps_note_planned_finish_for(
+                        list(affected_mo_ids), kwargs.get('salesOrderNote'))
+                except Exception as e:
+                    _logger.warning('Planned completion note failed: %s', str(e))
+
             return results
 
         except Exception as e:
@@ -1705,7 +1635,7 @@ class ApsApiController(http.Controller):
     # MATERIAL RE-RESERVATION - Unreserve and re-reserve for new schedule
     # =========================================================================
 
-    @http.route('/aps/api/v1/materials/re_reserve', type='json', auth='none', methods=['POST'], csrf=False)
+    @http.route('/aps/api/v1/materials/re_reserve', type='json', auth='none', methods=['POST'], csrf=False, readonly=False)
     def re_reserve_materials(self, **kwargs):
         """
         Global two-phase material re-reservation after schedule publish.

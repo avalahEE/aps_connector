@@ -22,6 +22,7 @@ The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for sch
 - Conflict detection using `write_date` to prevent overwriting concurrent changes
 - Material re-reservation for rescheduled work orders
 - Unplanning work orders APS deliberately left out, when the planner asks for it on publish
+- A note on the sale order when the planned completion of its last MO moves to another day or week, sub-assemblies included; APS's settings decide whether the salesperson is @mentioned or given an activity when the plan is later than the promised delivery. The date is kept in `Manufacturing complete (APS)` on the order
   (an operation arrives with no dates and the whole MO is unplanned, Odoo's own way; orders
   that have started or finished are left alone)
 
