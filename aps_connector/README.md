@@ -13,9 +13,9 @@ The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for sch
 - Calendars (week patterns with shift definitions)
 - Calendar Exceptions (leaves, holidays)
 - Products (manufactured/purchased items)
-- Bills of Materials
+- Bills of Materials the open manufacturing orders reach, sub-assemblies included
 - Maintenance requests (blocking maintenance windows)
-- Inventory levels and purchase order lines
+- Inventory levels, and purchase order lines of stocked products while a receipt is still open for them
 
 **Write back to Odoo:**
 - Scheduled start/finish dates on work orders
