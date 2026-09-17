@@ -242,6 +242,84 @@ def map_priority_to_aps(priority):
     return mapping.get(str(priority), 500)
 
 
+def is_storable(product):
+    """Stock is kept for it. 18 and 19 say so with is_storable; on 17 it is the product type."""
+    if 'is_storable' in product._fields:
+        return bool(product.is_storable)
+    return product.type == 'product'
+
+
+def open_receipt(line):
+    """What a purchase line still has on its way into stock.
+
+    Returns None when the receipts cannot say (no stock moves on the line at all, or a
+    database without them), so the caller falls back to ordered minus received. Otherwise
+    (quantity, date) over the line's open moves for its own product that end in our own
+    locations, less what is on its way back to the vendor. A line received and then
+    returned, or received short and closed without a backorder, has no such move left and
+    is closed for planning whatever qty_received says; (0.0, None) says that.
+
+    Only the destination is tested. A subcontracted receipt leaves from an internal
+    location and an inter-company one from transit, and both are real supply; a delivery
+    straight to a customer and a return to the vendor are told apart by where they end.
+
+    The quantity is the moves' product_qty, in the product's unit. product_qty minus
+    qty_received is in the unit of the purchase line: a line bought by the box counted as
+    that many pieces.
+    """
+    if 'move_ids' not in line._fields or not line.move_ids:
+        return None
+    pending = line.move_ids.filtered(
+        lambda m: m.state not in ('done', 'cancel') and m.product_id == line.product_id)
+    incoming = pending.filtered(lambda m: m.location_dest_id.usage in ('internal', 'transit'))
+    if not incoming:
+        return 0.0, None
+    # lowering a line after a partial receipt leaves the backorder as it was and adds a
+    # return for the difference
+    returning = pending.filtered(lambda m: m.location_dest_id.usage == 'supplier')
+    quantity = max(sum(incoming.mapped('product_qty')) - sum(returning.mapped('product_qty')), 0.0)
+    dates = [d for d in incoming.mapped('date') if d]
+    return quantity, (min(dates) if dates else None)
+
+
+def needed_boms(BOM, domain, products, max_depth=12):
+    """The BOMs a plan for these products can reach: their own, and below them the BOM of
+    every component that is itself made, level by level.
+
+    Returns the BOMs and, per BOM, the products it was found for, so a BOM set on a template
+    is exported for the variants somebody asked about and not for all of them. A customer
+    with 14,048 BOMs had open orders for a few hundred products; sending every BOM was 440 MB
+    a sync, and sending the first 5000 by id was whatever happened to be created first.
+    """
+    Product = products.browse()
+    found = BOM.browse()
+    wanted = {}
+    seen = Product
+    todo = products
+    for _level in range(max_depth):
+        if not todo:
+            break
+        seen |= todo
+        boms = BOM.search(domain + [
+            '|', ('product_id', 'in', todo.ids),
+            '&', ('product_id', '=', False), ('product_tmpl_id', 'in', todo.mapped('product_tmpl_id').ids),
+        ])
+        below = Product
+        for bom in boms:
+            parents = bom.product_id & todo if bom.product_id else todo.filtered(
+                lambda p: p.product_tmpl_id == bom.product_tmpl_id)
+            if not parents:
+                continue
+            wanted[bom.id] = wanted.get(bom.id, Product) | parents
+            for parent in parents:
+                for line in bom.bom_line_ids:
+                    if not line._skip_bom_line(parent):
+                        below |= line.product_id
+        found |= boms.filtered(lambda b: b.id in wanted)
+        todo = below - seen
+    return found, wanted
+
+
 def map_product_type_to_aps(product_type):
     """Map Odoo product type to APS ProductType"""
     mapping = {
@@ -675,6 +753,8 @@ class ApsApiController(http.Controller):
         - products: Products referenced by BOMs (parent + components)
         - bomLines: Component relationships
         - operations: Routing operations
+
+        productExternalIds narrows it to the BOMs those products can reach (needed_boms).
         """
         try:
             api_key = kwargs.get('api_key')
@@ -693,8 +773,19 @@ class ApsApiController(http.Controller):
                 ('active', '=', True),
                 '|', ('company_id', '=', company_id), ('company_id', '=', False),
             ]
-            total = BOM.search_count(domain)
-            boms = BOM.search(domain, limit=limit, offset=offset, order='id')
+            # With productExternalIds only the BOMs those products can reach are sent, see
+            # needed_boms; without it every BOM, a page at a time, as before.
+            asked = kwargs.get('productExternalIds')
+            scoped = asked is not None
+            wanted = {}
+            if scoped:
+                ids = [int(p) for p in asked if str(p).isdigit()]
+                needed, wanted = needed_boms(BOM, domain, env['product.product'].browse(ids).exists())
+                total = len(needed)
+                boms = needed.sorted('id')[offset:offset + limit]
+            else:
+                total = BOM.search_count(domain)
+                boms = BOM.search(domain, limit=limit, offset=offset, order='id')
 
             products = {}  # Deduplicated products
             bom_lines = []
@@ -709,6 +800,13 @@ class ApsApiController(http.Controller):
                 if bom.product_id:
                     variants = bom.product_id
                     suffix_ids = False
+                elif scoped:
+                    # the variants that were asked for, each under its own ids: the same ids
+                    # the unscoped export gives a template with more than one variant
+                    variants = wanted.get(bom.id, bom.product_tmpl_id.product_variant_id)
+                    # an open order can be for an archived variant: two variants going out
+                    # under one line id would share one row in APS
+                    suffix_ids = len(bom.product_tmpl_id.product_variant_ids.filtered('active') | variants) > 1
                 else:
                     variants = bom.product_tmpl_id.product_variant_ids.filtered('active')
                     suffix_ids = len(variants) > 1
@@ -771,6 +869,9 @@ class ApsApiController(http.Controller):
             return {
                 'success': True,
                 'total': total,
+                # tells APS this connector understood the product list; an older one ignores
+                # it and answers with the first page of everything
+                'scoped': scoped,
                 'products': list(products.values()),
                 'bomLines': bom_lines,
                 'operations': operations,
@@ -1285,6 +1386,8 @@ class ApsApiController(http.Controller):
     def get_purchase_orders(self, **kwargs):
         """
         Get open purchase order lines as APS MaterialSupply entities (type=PURCHASE_ORDER).
+
+        Open means a receipt is still open for it: see open_receipt.
         """
         try:
             api_key = kwargs.get('api_key')
@@ -1308,8 +1411,10 @@ class ApsApiController(http.Controller):
                 domain.append(('product_id', 'in', [int(pid) for pid in product_external_ids]))
 
             all_lines = POLine.search(domain)
-            # Filter to only include lines with pending quantity
-            lines = all_lines.filtered(lambda l: l.qty_received < l.product_qty)
+            # Pending quantity, and only what is kept in stock: a service or a consumable on
+            # a purchase order is a cost, not material a plan can wait for.
+            lines = all_lines.filtered(
+                lambda l: l.qty_received < l.product_qty and l.product_id and is_storable(l.product_id))
 
             # Collect products
             products = {}
@@ -1317,6 +1422,10 @@ class ApsApiController(http.Controller):
 
             for line in lines:
                 product = line.product_id
+                receipt = open_receipt(line)
+                if receipt is not None and receipt[0] <= 0:
+                    # received short and closed without a backorder: nothing is coming
+                    continue
                 products[product.id] = {
                     'externalId': str(product.id),
                     'code': product.default_code or f'PROD-{product.id}',
@@ -1330,14 +1439,12 @@ class ApsApiController(http.Controller):
                 # the receipt's scheduled date, not the line's expected arrival — the two
                 # differ by a day on a customer's order and made our plan a day optimistic.
                 # The line date remains the fallback for a line with no receipt yet.
-                incoming = line.move_ids.filtered(
-                    lambda m: m.state not in ('done', 'cancel') and m.date
-                ) if 'move_ids' in line._fields else line.browse()
-                planned = (min(incoming.mapped('date')) if incoming else None) or (
+                planned = (receipt[1] if receipt is not None else None) or (
                     line.date_planned or line.order_id.date_planned
                     or line.order_id.date_approve or line.order_id.date_order)
 
-                qty_pending = float(line.product_qty) - float(line.qty_received)
+                qty_pending = float(receipt[0]) if receipt is not None else (
+                    float(line.product_qty) - float(line.qty_received))
                 records.append({
                     'externalId': str(line.id),
                     'productExternalId': str(product.id),

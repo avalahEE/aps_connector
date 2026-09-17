@@ -105,3 +105,81 @@ class TestBomExport(ApsApiCase):
                     if l['parentProductExternalId'] == str(self.variant_white.id)
                     and l['componentProductExternalId'] == str(self.sheet_white.id))
         self.assertEqual(line['unitOfMeasure'], self.sheet_white.uom_id.name)
+
+    # Only the BOMs a plan can reach. A customer with 14,048 BOMs and open orders for a few
+    # hundred products was sent the first 5000 by id, 250,000 lines, none of them chosen.
+
+    def make_bom(self, product, components):
+        return self.env['mrp.bom'].create({
+            'product_tmpl_id': product.product_tmpl_id.id,
+            'product_qty': 1,
+            'bom_line_ids': [(0, 0, {'product_id': c.id, 'product_qty': 1}) for c in components],
+        })
+
+    def test_asked_for_products_bring_their_boms_and_the_boms_below_them(self):
+        frame = self.make_storable('Frame')            # made, inside the cabinet
+        rail = self.make_storable('Rail')              # made, inside the frame
+        steel = self.make_storable('Steel')
+        cabinet = self.make_storable('Cabinet')
+        unrelated = self.make_storable('Unrelated')
+        self.make_bom(cabinet, [frame, self.screws])
+        self.make_bom(frame, [rail])
+        self.make_bom(rail, [steel])
+        self.make_bom(unrelated, [self.screws])
+
+        result = self.call('boms', productExternalIds=[str(cabinet.id)])
+        self.assertTrue(result['scoped'])
+        self.assertEqual(result['total'], 3)
+        parents = {l['parentProductExternalId'] for l in result['bomLines']}
+        self.assertEqual(parents, {str(cabinet.id), str(frame.id), str(rail.id)})
+        self.assertNotIn(str(unrelated.id), {p['externalId'] for p in result['products']})
+
+    def test_a_template_bom_is_sent_for_the_variant_asked_for_under_the_same_ids(self):
+        everything = self.call('boms', limit=5000)
+        self.assertFalse(everything['scoped'])
+        black_ids = {l['externalId'] for l in everything['bomLines']
+                     if l['parentProductExternalId'] == str(self.variant_black.id)}
+
+        result = self.call('boms', productExternalIds=[str(self.variant_black.id)])
+        self.assertEqual({l['parentProductExternalId'] for l in result['bomLines']}, {str(self.variant_black.id)})
+        self.assertEqual({l['externalId'] for l in result['bomLines']}, black_ids,
+                         'the rows APS already holds must be the rows it is sent again')
+        self.assertEqual(self.components_of(result, self.variant_black),
+                         {str(self.sheet_black.id), str(self.screws.id)})
+        self.assertEqual({o['operationName'] for o in result['operations']}, {'Cut', 'Paint Black'})
+
+    def test_nothing_asked_for_is_nothing_sent_and_a_loop_in_the_boms_ends(self):
+        self.assertEqual(self.call('boms', productExternalIds=[])['total'], 0)
+        a = self.make_storable('Loop A')
+        b = self.make_storable('Loop B')
+        self.make_bom(a, [b])
+        # Odoo refuses a BOM that contains its own product through the form; written past
+        # the check, the walk still has to end
+        bom_b = self.make_bom(b, [self.screws])
+        self.env.cr.execute('UPDATE mrp_bom_line SET product_id = %s WHERE bom_id = %s', (a.id, bom_b.id))
+        self.env.invalidate_all()
+        result = self.call('boms', productExternalIds=[str(a.id)])
+        self.assertEqual(result['total'], 2)
+
+    def test_the_scoped_answer_is_paged_like_the_other(self):
+        made = [self.make_storable('Paged %s' % i) for i in range(3)]
+        for product in made:
+            self.make_bom(product, [self.screws])
+        ids = [str(p.id) for p in made]
+        first = self.call('boms', productExternalIds=ids, limit=2, offset=0)
+        second = self.call('boms', productExternalIds=ids, limit=2, offset=2)
+        self.assertEqual((first['total'], second['total']), (3, 3))
+        parents = [l['parentProductExternalId'] for l in first['bomLines'] + second['bomLines']]
+        self.assertEqual(sorted(parents), sorted(ids))
+
+    def test_an_archived_variant_asked_for_gets_ids_of_its_own(self):
+        self.variant_white.active = False
+        try:
+            result = self.call('boms', productExternalIds=[str(self.variant_black.id), str(self.variant_white.id)])
+            ids = [l['externalId'] for l in result['bomLines']]
+            self.assertEqual(len(ids), len(set(ids)), 'two variants under one line id share one row in APS')
+            self.assertEqual({l['parentProductExternalId'] for l in result['bomLines']},
+                             {str(self.variant_black.id), str(self.variant_white.id)})
+        finally:
+            self.variant_white.active = True
+
