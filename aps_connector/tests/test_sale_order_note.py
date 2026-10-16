@@ -5,6 +5,7 @@ from odoo import fields
 from odoo.tests import tagged
 
 from .common import ApsApiCase
+from ..models.sale_order import long_date
 
 
 def next_monday_06(weeks_ahead=2):
@@ -83,8 +84,10 @@ class TestSaleOrderNote(ApsApiCase):
     def late_activities(self):
         return self.so.activity_ids.filtered(lambda a: a.summary == self.so.LATE_SUMMARY)
 
-    def shown(self, dt, tz='Europe/Berlin'):
-        return fields.Datetime.context_timestamp(self.so.with_context(tz=tz), dt).strftime('%d %b %Y %H:%M')
+    def shown(self, dt, tz=None):
+        """The date as the note writes it, on the plant's clock (the publish's time zone, else the company's)."""
+        tz = tz or self.env.company.partner_id.tz or 'UTC'
+        return long_date(fields.Datetime.context_timestamp(self.so.with_context(tz=tz), dt))
 
     def test_defaults_are_a_quiet_note(self):
         result = self.publish((self.cabinet_mo, self.monday), (self.door_mo, self.monday + timedelta(days=2)))
@@ -94,7 +97,8 @@ class TestSaleOrderNote(ApsApiCase):
         note = self.notes()
         self.assertEqual(len(note), 1)
         self.assertIn(self.shown(door_end), note.body)
-        self.assertIn('Europe/Berlin', note.body, "in the salesperson's own zone")
+        self.assertNotRegex(note.body, r'\d\d:\d\d', 'a date, no time')
+        self.assertNotIn('Europe/Berlin', note.body, 'no time zone either')
         self.assertNotIn('@', note.body)
         self.assertFalse(note.partner_ids, 'nobody is told')
         self.assertFalse(self.late_activities())
@@ -126,8 +130,10 @@ class TestSaleOrderNote(ApsApiCase):
         self.assertEqual(len(self.notes()), 2)
 
     def test_week_boundary_is_on_the_plants_clock(self):
-        # work ending Sunday 22:30 UTC is still this week in UTC and already Monday of next week in Berlin
-        sunday_late = self.monday + timedelta(days=6, hours=14, minutes=30)
+        # work ending Sunday 23:30 UTC is still this week in UTC and already Monday of next week in
+        # Berlin, in summer (UTC+2) and in winter (UTC+1) time alike; 22:30 stopped being Monday
+        # once the test's dates fell after the switch to winter time
+        sunday_late = self.monday + timedelta(days=6, hours=15, minutes=30)
         self.move(self.monday, unit='WEEK', timezone='UTC')
         self.assertEqual(self.move(sunday_late, unit='WEEK', timezone='UTC')['salesOrdersNoted'], 0)
         other = self.env['sale.order'].create({
@@ -226,3 +232,20 @@ class TestSaleOrderNote(ApsApiCase):
         result = self.publish((loose, self.monday), mode='ACTIVITY')
         self.assertEqual(result.get('salesOrdersNoted', 0), 0)
         self.assertEqual(self.env['mail.message'].search_count([('body', 'ilike', 'Planned by APS')]), before)
+
+    def test_the_date_is_the_plants_day_not_the_salespersons(self):
+        # 02:00 UTC is already the next day for the salesperson in Berlin, still the evening
+        # before for a plant in Denver; the note goes by the plant, as the day comparison does
+        end = (self.monday + timedelta(days=3)).replace(hour=2)
+        self.publish((self.cabinet_mo, self.monday), (self.door_mo, end - timedelta(hours=2)), timezone='America/Denver')
+        body = self.notes()[-1].body
+        self.assertIn(self.shown(end, 'America/Denver'), body)
+        self.assertNotIn(self.shown(end, 'Europe/Berlin'), body)
+
+    def test_long_date_is_spelled_out_with_the_day_as_an_ordinal(self):
+        for day, text in [(1, 'December 1st, 2026'), (2, 'December 2nd, 2026'), (3, 'December 3rd, 2026'),
+                          (4, 'December 4th, 2026'), (11, 'December 11th, 2026'), (12, 'December 12th, 2026'),
+                          (13, 'December 13th, 2026'), (15, 'December 15th, 2026'), (21, 'December 21st, 2026'),
+                          (22, 'December 22nd, 2026'), (23, 'December 23rd, 2026'), (31, 'December 31st, 2026')]:
+            self.assertEqual(long_date(datetime(2026, 12, day)), text)
+        self.assertEqual(long_date(datetime(2027, 2, 28)), 'February 28th, 2027')
