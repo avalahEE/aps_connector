@@ -105,6 +105,17 @@ def sale_orders_by_mo(cr, mo_ids):
     }
 
 
+MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+          'September', 'October', 'November', 'December')
+
+
+def long_date(local):
+    """December 15th, 2026: spelled out in English whatever the server's locale."""
+    day = local.day
+    suffix = 'th' if 11 <= day % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+    return '%s %d%s, %d' % (MONTHS[local.month - 1], day, suffix, local.year)
+
+
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
@@ -195,9 +206,10 @@ class SaleOrder(models.Model):
         late = bool(promised) and self._aps_bucket(planned, opts) > self._aps_bucket(promised, opts)
         was_late = bool(promised and previous) and self._aps_bucket(previous, opts) > self._aps_bucket(promised, opts)
 
-        tz = self.user_id.tz or opts['tz']
-        show = lambda d: fields.Datetime.context_timestamp(self.with_context(tz=tz), d).strftime('%d %b %Y %H:%M')
-        text = 'Manufacturing planned to complete %s (%s)' % (show(planned), tz)
+        # the day on the plant's clock, the one the day and week comparison above uses: in the
+        # salesperson's own zone the same plant day could read as two different dates
+        show = lambda d: long_date(fields.Datetime.context_timestamp(self.with_context(tz=opts['tz']), d))
+        text = 'Manufacturing planned to complete %s' % show(planned)
         if previous:
             text += ', was %s' % show(previous)
         text += '.'
