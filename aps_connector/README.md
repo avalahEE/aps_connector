@@ -7,7 +7,9 @@ Odoo module that provides a JSON-RPC API for bi-directional integration with [AP
 The APS Connector exposes Odoo manufacturing data to APS 4 Manufacturing for scheduling, and writes optimized schedules back to Odoo.
 
 **Read from Odoo:**
-- Manufacturing Orders (with Sale Order linkage, components, parent/child MO hierarchy)
+- Manufacturing Orders (with Sale Order linkage, components, parent/child MO hierarchy). An MO made for a
+  sale order is due when the order ships: the scheduled date of its open delivery, or the order's expected
+  date before there is one. "On hold for APS" on the MO keeps it and its sub-assemblies out of the plan.
 - Operations / Work Orders (with dependencies, resource assignments, date ranges)
 - Work Centers (with calendars, capacity, efficiency, alternative resources)
 - Calendars (week patterns with shift definitions)

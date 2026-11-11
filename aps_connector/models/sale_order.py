@@ -105,6 +105,43 @@ def sale_orders_by_mo(cr, mo_ids):
     }
 
 
+def ship_dates(env, so_ids):
+    """When each sale order is due to ship: the scheduled date of its earliest open
+    delivery, which sales moves when a customer pushes shipping back, or the order's
+    expected date while there is no delivery yet. An order whose deliveries are all done
+    is left out, so its MOs keep their own deadline instead of a date long past.
+    Returns {sale_order_id: datetime}."""
+    so_ids = list(so_ids)
+    if not so_ids:
+        return {}
+    env.cr.execute("""
+        SELECT sp.sale_id, MIN(sp.scheduled_date) FILTER (WHERE sp.state NOT IN ('done', 'cancel'))
+        FROM stock_picking sp
+        JOIN stock_picking_type spt ON spt.id = sp.picking_type_id
+        WHERE sp.sale_id = ANY(%s) AND spt.code = 'outgoing'
+        GROUP BY sp.sale_id
+    """, (so_ids,))
+    shipping = dict(env.cr.fetchall())
+    dates = {so_id: date for so_id, date in shipping.items() if date}
+    # expected_date is computed and not stored
+    for so in env['sale.order'].browse([i for i in so_ids if i not in shipping]):
+        if so.expected_date:
+            dates[so.id] = so.expected_date
+    return dates
+
+
+def orders_shipping_changed(cr, company_id, since):
+    """Sale orders whose delivery was rescheduled, or the order itself edited, since the
+    last sync: their MOs did not change, but their deadline did."""
+    cr.execute("""
+        SELECT DISTINCT so.id
+        FROM sale_order so
+        LEFT JOIN stock_picking sp ON sp.sale_id = so.id
+        WHERE so.company_id = %s AND (so.write_date >= %s OR sp.write_date >= %s)
+    """, (company_id, since, since))
+    return {row[0] for row in cr.fetchall()}
+
+
 MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
           'September', 'October', 'November', 'December')
 
