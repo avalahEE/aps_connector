@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from odoo import http, fields, SUPERUSER_ID
 from odoo.http import request, Response
 
-from ..models.sale_order import sale_orders_by_mo
+from ..models.sale_order import sale_orders_by_mo, ship_dates, orders_shipping_changed
 
 _logger = logging.getLogger(__name__)
 
@@ -917,8 +917,17 @@ class ApsApiController(http.Controller):
             where_clauses = ["mp.state = ANY(%s)", "mp.company_id = %s"]
             params = [odoo_states, company_id]
             if since:
-                where_clauses.append("mp.write_date >= %s")
-                params.append(since)
+                # a rescheduled delivery moves the deadline of MOs that did not change themselves
+                rescheduled = []
+                changed_orders = orders_shipping_changed(cr, company_id, since)
+                if changed_orders:
+                    cr.execute("SELECT id FROM mrp_production WHERE state = ANY(%s) AND company_id = %s",
+                               (odoo_states, company_id))
+                    open_ids = [r[0] for r in cr.fetchall()]
+                    rescheduled = [mo_id for mo_id, so in sale_orders_by_mo(cr, open_ids).items()
+                                   if so['id'] in changed_orders]
+                where_clauses.append("(mp.write_date >= %s OR mp.id = ANY(%s))")
+                params += [since, rescheduled]
             where_sql = " AND ".join(where_clauses)
 
             # Count total
@@ -928,7 +937,7 @@ class ApsApiController(http.Controller):
             # Q1: MOs with product, parent MO (via stock_move FK)
             cr.execute(f"""
                 SELECT mp.id, mp.name, mp.product_id, mp.product_qty, mp.qty_producing,
-                       mp.date_deadline, mp.date_start, mp.priority, mp.state, mp.origin,
+                       mp.date_deadline, mp.date_start, mp.priority, mp.state, mp.origin, mp.aps_on_hold,
                        pp.id AS prod_pp_id,
                        COALESCE(pt.name->>'en_US', (SELECT value FROM jsonb_each_text(pt.name) LIMIT 1), '') AS product_name,
                        pp.default_code AS product_code,
@@ -991,9 +1000,11 @@ class ApsApiController(http.Controller):
             for c in comp_rows:
                 comps_by_mo.setdefault(c['mo_id'], []).append(c)
 
-            so_by_mo = {
-                mo_id: (so['name'], so['customer']) for mo_id, so in sale_orders_by_mo(cr, mo_ids).items()
-            }
+            so_of_mo = sale_orders_by_mo(cr, mo_ids)
+            so_by_mo = {mo_id: (so['name'], so['customer']) for mo_id, so in so_of_mo.items()}
+            # An MO made for a sale order is due when the order ships, not by its own line's
+            # sales delay: a 1-day kit on an order shipping in 150 days is not late
+            ship_by_so = ship_dates(request.env(user=SUPERUSER_ID), {so['id'] for so in so_of_mo.values()})
 
             # Build response
             products = {}
@@ -1017,6 +1028,10 @@ class ApsApiController(http.Controller):
                 customer_name = None
                 if mo['id'] in so_by_mo:
                     sale_order_name, customer_name = so_by_mo[mo['id']]
+
+                due = mo['date_deadline']
+                if mo['id'] in so_of_mo:
+                    due = ship_by_so.get(so_of_mo[mo['id']]['id']) or due
 
                 # Parent MO from stock_move FK
                 parent_mo_external_id = str(mo['parent_mo_id']) if mo['parent_mo_id'] else None
@@ -1053,7 +1068,7 @@ class ApsApiController(http.Controller):
                     'productExternalId': str(prod_id),
                     'quantity': float(mo['product_qty']),
                     'quantityCompleted': float(mo['qty_producing'] or 0),
-                    'dueDate': mo['date_deadline'].isoformat() + 'Z' if mo['date_deadline'] else None,
+                    'dueDate': due.isoformat() + 'Z' if due else None,
                     'earliestStartDate': mo['date_start'].isoformat() + 'Z' if mo['date_start'] else None,
                     'priority': map_priority_to_aps(mo['priority']),
                     'status': map_mo_state_to_aps(mo['state']),
@@ -1062,6 +1077,7 @@ class ApsApiController(http.Controller):
                     'saleOrderName': sale_order_name,
                     'customerName': customer_name,
                     'parentMoExternalId': parent_mo_external_id,
+                    'onHold': bool(mo['aps_on_hold']),
                     'components': components,
                 })
 
