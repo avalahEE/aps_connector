@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'APS Connector',
-    'version': '18.0.1.22.0',
+    'version': '18.0.1.23.0',
     'category': 'Manufacturing',
     'summary': 'Finite capacity scheduling for Odoo manufacturing — connect to APS 4 Manufacturing',
     'author': 'Avalah',
@@ -20,6 +20,7 @@
         'security/aps_security.xml',
         'security/ir.model.access.csv',
         'views/aps_sync_config_views.xml',
+        'views/mrp_production_views.xml',
         'views/menu_views.xml',
         'data/aps_sync_config_data.xml',
     ],
